@@ -1,0 +1,31 @@
+# Thème sombre violet et rose
+[theme]
+base = "dark"
+primaryColor = "#db2777"
+backgroundColor = "#140c24"
+secondaryBackgroundColor = "#221638"
+textColor = "#f3e8ff"
+linkColor = "#f472b6"
+borderColor = "#3d2a61"
+showWidgetBorder = true
+baseRadius = "10px"
+buttonRadius = "10px"
+codeBackgroundColor = "#1b1030"
+codeTextColor = "#f9a8d4"
+dataframeBorderColor = "#3d2a61"
+dataframeHeaderBackgroundColor = "#2a1b45"
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Poppins:https://fonts.googleapis.com/css2?family=Poppins:wght@600;700&display=swap"
+headingFontWeights = [700, 600, 600, 600, 600, 600]
+chartCategoricalColors = ["#ec4899", "#a855f7", "#f472b6", "#c084fc", "#db2777", "#7c3aed", "#f9a8d4"]
+violetColor = "#a855f7"
+redColor = "#fb7185"
+greenColor = "#4ade80"
+blueColor = "#818cf8"
+yellowColor = "#facc15"
+orangeColor = "#fb923c"
+
+[theme.sidebar]
+backgroundColor = "#1b1030"
+secondaryBackgroundColor = "#221638"
+borderColor = "#3d2a61"
