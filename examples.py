@@ -16,6 +16,17 @@ BLANK_PROBLEM = {
 }
 
 EXAMPLES = {
+    "Achat d'une voiture (exercice AHP complet du cours)": {
+        "problem": "Acheter une voiture",
+        "criteria": [("Coût", MIN), ("Confort", MAX), ("Sécurité", MAX)],
+        "alternatives": ["Voiture 1", "Voiture 2"],
+        "matrix": None,  # AHP classe les alternatives par comparaisons par paires : pas de matrice chiffrée
+        "ahp": {(0, 1): 7, (0, 2): 3, (1, 2): 1 / 3},
+        # Comparaisons des alternatives par critère : {indice critère: {(i, j): a_ij}} (diapo 34).
+        "ahp_alt": {0: {(0, 1): 7}, 1: {(0, 1): 1 / 5}, 2: {(0, 1): 1 / 9}},
+        "bwm": {"best": 0, "worst": 1, "bo": [1, 7, 3], "ow": [7, 1, 3]},
+        "methods": ("AHP", "AHP"),
+    },
     "Choix d'une voiture (exercice TOPSIS du cours)": {
         "problem": "Choisir une voiture parmi 4 marques",
         "criteria": [("Style", MAX), ("Fiabilité", MAX), ("Économie de carburant", MAX), ("Coût", MIN)],

@@ -15,13 +15,17 @@ from examples import BLANK, BLANK_PROBLEM, EXAMPLES, MAX, MIN
 st.set_page_config(page_title="Aide à la décision multicritère", layout="wide")
 
 WEIGHT_METHODS = ["AHP", "BWM", "Entropie", "CRITIC"]
-RANK_METHODS = ["WSM", "TOPSIS"]
+RANK_METHODS = ["WSM", "TOPSIS", "AHP"]
 
 
 
 # ---------------------------------------------------------------------------
 # État de session
 # ---------------------------------------------------------------------------
+
+def snap_saaty(v):
+    return min(mcdm.SAATY_VALUES, key=lambda s: abs(np.log(s) - np.log(max(v, 1e-9))))
+
 
 def load_example(name: str) -> None:
     """Charge un exemple (ou un problème vierge) : structure, matrice, jugements AHP et BWM."""
@@ -44,17 +48,35 @@ def load_example(name: str) -> None:
         "bo": dict(zip(crits, b["bo"])),
         "ow": dict(zip(crits, b["ow"])),
     }
+    alts_ex = ex["alternatives"]
+    ss.ahp_alt_store = {
+        (crits[j], alts_ex[a], alts_ex[b]): float(v)
+        for j, pairs in ex.get("ahp_alt", {}).items()
+        for (a, b), v in pairs.items()
+    }
+    if ex["matrix"] is not None and "ahp_alt" not in ex:
+        # Comparaisons AHP des alternatives déduites des rapports de la matrice (arrondis à l'échelle 1-9).
+        for j, (c, sens) in enumerate(ex["criteria"]):
+            for a in range(len(alts_ex)):
+                for b in range(a + 1, len(alts_ex)):
+                    xa, xb = ex["matrix"][a][j], ex["matrix"][b][j]
+                    ratio = (xa / xb if sens == MAX else xb / xa) if xa > 0 and xb > 0 else 1.0
+                    ss.ahp_alt_store[(c, alts_ex[a], alts_ex[b])] = snap_saaty(min(max(ratio, 1 / 9), 9))
+    if "methods" in ex:
+        ss.w_method, ss.r_method = ex["methods"]
+    ss.force_ahp_alt = False
     ss.version = ss.get("version", 0) + 1
     ss.struct = None
     ss.force_ahp = False
     # Oublie l'état des widgets de jugement pour qu'ils se réinitialisent depuis les stores.
-    for k in [k for k in ss.keys() if isinstance(k, str) and k.startswith(("_ahp::", "_bwm", "_c_", "_a_", "_ncrit", "_nalt"))]:
+    for k in [k for k in ss.keys() if isinstance(k, str) and k.startswith(("_ahp::", "_ahpa::", "_bwm", "_c_", "_a_", "_ncrit", "_nalt"))]:
         del ss[k]
 
 
 if "version" not in st.session_state:
     load_example(BLANK)
 ss = st.session_state
+ss.setdefault("ahp_alt_store", {})
 
 
 def fmt(x, d=4):
@@ -67,10 +89,6 @@ def saaty_label(v, ci, cj):
     if v > 1:
         return f"{ci} ×{round(v):d}"
     return f"{cj} ×{round(1 / v):d}"
-
-
-def snap_saaty(v):
-    return min(mcdm.SAATY_VALUES, key=lambda s: abs(np.log(s) - np.log(max(v, 1e-9))))
 
 
 # ---------------------------------------------------------------------------
@@ -96,9 +114,9 @@ with st.sidebar:
         "2. Classement des alternatives",
         RANK_METHODS,
         key="r_method",
-        captions=["Somme pondérée", "Distance aux solutions idéales"],
+        captions=["Somme pondérée", "Distance aux solutions idéales", "Comparaisons par paires des alternatives"],
     )
-    st.caption(f"Combinaison active : **{w_method} + {r_method}**. Les 8 combinaisons sont comparées à l'étape 6.")
+    st.caption(f"Combinaison active : **{w_method} + {r_method}**. Toutes les combinaisons sont comparées à l'étape 6.")
 st.caption(
     "Pondération des critères par AHP, BWM, entropie ou CRITIC, puis classement des alternatives par WSM ou TOPSIS, "
     "avec les formules du cours « Aide à la décision » (EMI)."
@@ -220,28 +238,36 @@ with st.container(border=True):
 
     X = vals
     missing = [f"{a} / {c}" for i, a in enumerate(alts) for j, c in enumerate(crits) if np.isnan(X[i, j])]
-    if len(missing) == X.size:
+    matrix_needed = not (r_method == "AHP" and w_method in ("AHP", "BWM"))
+    if missing and not matrix_needed:
+        st.info(
+            f"Avec {w_method} + AHP, la matrice est facultative : les alternatives sont classées par vos comparaisons "
+            "par paires (étape 5). Remplie, elle sert à préremplir ces comparaisons.",
+            icon=":material/info:",
+        )
+        X = None
+    elif len(missing) == X.size:
         st.info(
             "Saisissez vos valeurs dans la matrice ci-dessus (une valeur numérique par case). "
             "Renommez d'abord critères et alternatives à l'étape 2 si nécessaire.",
             icon=":material/edit:",
         )
         st.stop()
-    if missing:
+    elif missing:
         st.error(
             f"{len(missing)} valeur(s) manquante(s) : {', '.join(missing[:8])}{' …' if len(missing) > 8 else ''}. "
             "Complétez la matrice pour poursuivre.",
             icon=":material/error:",
         )
         st.stop()
-    const = mcdm.constant_columns(X)
+    const = mcdm.constant_columns(X) if X is not None else np.zeros(len(crits), dtype=bool)
     if const.any():
         st.warning(
             "Critère(s) constant(s) : " + ", ".join(c for c, k in zip(crits, const) if k)
             + ". Ils ne permettent pas de départager les alternatives.",
             icon=":material/warning:",
         )
-    if (X <= 0).any():
+    if X is not None and (X <= 0).any():
         st.info(
             "La matrice contient des valeurs nulles ou négatives : les colonnes concernées seront normalisées par "
             "min-max pour WSM et l'entropie (les ratios du cours exigent des valeurs strictement positives).",
@@ -293,6 +319,8 @@ def compute_weights(method):
         if method == "BWM":
             r = bwm_result()
             return r["weights"], r
+        if X is None and method in ("Entropie", "CRITIC"):
+            return None, "la matrice de décision est incomplète"
         if method == "Entropie":
             r = mcdm.entropy_weights(X, benefit, crits)
             return r["weights"], r
@@ -302,8 +330,37 @@ def compute_weights(method):
         return None, str(exc)
 
 
+def ahp_alt_matrix(c):
+    """Matrice de comparaison des alternatives pour le critère c, depuis les jugements mémorisés."""
+    judg = {}
+    for i in range(m):
+        for j in range(i + 1, m):
+            v = ss.ahp_alt_store.get((c, alts[i], alts[j]))
+            if v is None and (c, alts[j], alts[i]) in ss.ahp_alt_store:
+                v = 1 / ss.ahp_alt_store[(c, alts[j], alts[i])]
+            judg[(i, j)] = snap_saaty(v if v else 1.0)
+    return mcdm.ahp_matrix_from_judgments(m, judg)
+
+
 def rank(method, w):
+    if method == "AHP":
+        return mcdm.ahp_rank([ahp_alt_matrix(c) for c in crits], w, crits)
     return (mcdm.wsm if method == "WSM" else mcdm.topsis)(X, benefit, w, crits)
+
+
+def prefill_ahp_alt_from_matrix():
+    """Préremplit les comparaisons des alternatives par les rapports de la matrice (arrondis à l'échelle 1-9)."""
+    for j, c in enumerate(crits):
+        for i in range(m):
+            for k in range(i + 1, m):
+                a, b = ss.cells.get((alts[i], c)), ss.cells.get((alts[k], c))
+                if a is None or b is None or np.isnan(a) or np.isnan(b) or a <= 0 or b <= 0:
+                    v = 1.0
+                else:
+                    v = snap_saaty(min(max(a / b if benefit[j] else b / a, 1 / 9), 9))
+                ss.ahp_alt_store[(c, alts[i], alts[k])] = v
+    for k in [k for k in ss.keys() if isinstance(k, str) and k.startswith("_ahpa::")]:
+        del ss[k]
 
 
 def show_warnings(res):
@@ -513,14 +570,69 @@ with st.container(border=True):
         "WSM = *Weighted Sum Method*, « méthode des sommes pondérées » du cours (diapo 58). "
         "L'abréviation « SWM » de la consigne désigne cette même méthode : le nom du cours, WSM, est retenu."
     )
+    if r_method == "AHP":
+        st.markdown(
+            "Pour chaque critère, comparez les alternatives deux à deux sur l'échelle de Saaty : placez le curseur du "
+            "côté de l'alternative **préférée** selon ce critère (pour un critère à minimiser comme un coût, "
+            "l'alternative la moins chère est la préférée)."
+        )
+        st.button(
+            "Préremplir depuis la matrice de décision", icon=":material/auto_fix_high:",
+            on_click=prefill_ahp_alt_from_matrix, disabled=X is None,
+            help="Rapport des valeurs de la matrice (inversé pour un critère à minimiser), arrondi à l'échelle 1 à 9.",
+        )
+        alt_pairs = [(i, j) for i in range(m) for j in range(i + 1, m)]
+        if all(abs(ss.ahp_alt_store.get((c, alts[i], alts[j]), 1.0) - 1) < 1e-9 for c in crits for i, j in alt_pairs):
+            st.info(
+                "Toutes les comparaisons sont à « égale importance » : les alternatives seront ex æquo. "
+                "Ajustez les curseurs ou utilisez le préremplissage.",
+                icon=":material/info:",
+            )
+        for c, tab in zip(crits, st.tabs(crits)):
+            with tab:
+                cols = st.columns(2)
+                for k, (i, j) in enumerate(alt_pairs):
+                    ai, aj = alts[i], alts[j]
+                    key = f"_ahpa::{c}::{ai}::{aj}"
+                    if key not in ss:
+                        v = ss.ahp_alt_store.get((c, ai, aj))
+                        if v is None and (c, aj, ai) in ss.ahp_alt_store:
+                            v = 1 / ss.ahp_alt_store[(c, aj, ai)]
+                        ss[key] = snap_saaty(v or 1.0)
+                    with cols[k % 2]:
+                        ss.ahp_alt_store[(c, ai, aj)] = st.select_slider(
+                            f"{ai} ↔ {aj}", options=mcdm.SAATY_VALUES, key=key,
+                            format_func=lambda v, ai=ai, aj=aj: saaty_label(v, ai, aj),
+                        )
+                loc = mcdm.ahp_weights(ahp_alt_matrix(c))
+                c1, c2 = st.columns([3, 2])
+                c1.dataframe(pd.DataFrame({"Alternative": alts, "Priorité locale": loc["weights"]}), hide_index=True,
+                             column_config={"Priorité locale": st.column_config.ProgressColumn(
+                                 format="%.4f", min_value=0.0, max_value=1.0)})
+                if m <= 2:
+                    c2.info("2 alternatives : matrice toujours cohérente.", icon=":material/info:")
+                elif loc["consistent"]:
+                    c2.success(f"CR = {fmt(loc['CR'])} < 0,1 : cohérent.", icon=":material/check_circle:")
+                else:
+                    c2.error(f"CR = {fmt(loc['CR'])} ≥ 0,1 : jugements incohérents, à réviser.", icon=":material/error:")
+        st.caption(f"{len(alt_pairs)} comparaisons par critère, soit {len(alt_pairs) * n} au total.")
+
     if weights is None:
         st.info("Obtenez d'abord des poids valides à l'étape 4.", icon=":material/info:")
         st.stop()
 
     res = rank(r_method, weights)
     show_warnings(res)
+    if r_method == "AHP" and res["inconsistent"]:
+        st.error(
+            "Comparaisons incohérentes (CR ≥ 0,1) pour : " + ", ".join(res["inconsistent"])
+            + ". Selon le cours, révisez-les avant de conclure.",
+            icon=":material/error:",
+        )
+        if not st.checkbox("Classer malgré l'incohérence", key="force_ahp_alt"):
+            st.stop()
     order = np.argsort(res["ranks"], kind="stable")
-    score_label = "Score Q_i" if r_method == "WSM" else "Coefficient RC_i"
+    score_label = {"WSM": "Score Q_i", "TOPSIS": "Coefficient RC_i", "AHP": "Priorité finale"}[r_method]
     table = pd.DataFrame({
         "Rang": res["ranks"][order],
         "Alternative": [alts[i] for i in order],
@@ -551,6 +663,9 @@ with st.container(border=True):
         how = ("WSM normalise chaque critère (x/max pour un critère à maximiser, min/x pour un critère à minimiser), "
                "puis additionne les valeurs pondérées : Q_i = Σ w_j·r_ij. Un bon résultat sur un critère peut compenser "
                "un mauvais résultat sur un autre.")
+    elif r_method == "AHP":
+        how = ("AHP combine les priorités locales de chaque alternative (issues de vos comparaisons par paires, "
+               "critère par critère) avec les poids des critères : priorité finale = Σ w_j·w_ij.")
     else:
         how = ("TOPSIS mesure la distance de chaque alternative à la solution idéale positive (meilleures valeurs pondérées) "
                "et à la solution idéale négative. RC_i = S⁻/(S⁺ + S⁻) vaut 1 pour une alternative confondue avec l'idéal "
@@ -572,6 +687,20 @@ with st.container(border=True):
             wtd = pd.DataFrame(res["weighted"], index=alts, columns=crits)
             wtd["Q_i"] = res["scores"]
             st.dataframe(wtd.style.format("{:.4f}"))
+        elif r_method == "AHP":
+            st.markdown("**Priorités locales w_ij** (une colonne par critère) et **priorités finales** Σ w_j·w_ij")
+            loc_df = pd.DataFrame(res["local"], index=alts, columns=crits)
+            loc_df["Priorité finale"] = res["scores"]
+            loc_df.loc["Poids des critères w_j"] = [*weights, np.nan]
+            st.dataframe(loc_df.style.format("{:.4f}", na_rep=""))
+            st.dataframe(pd.DataFrame(
+                {"λmax": [r["lambda_max"] for r in res["local_results"]],
+                 "CI": [r["CI"] for r in res["local_results"]],
+                 "CR": [r["CR"] for r in res["local_results"]]}, index=crits,
+            ).style.format("{:.4f}"))
+            for c in crits:
+                st.markdown(f"**Matrice de comparaison des alternatives — {c}**")
+                st.dataframe(pd.DataFrame(ahp_alt_matrix(c), index=alts, columns=alts).style.format("{:.4f}"))
         else:
             st.markdown("**Étape 1 : normalisation vectorielle** r_ij = x_ij / √(Σ_i x_ij²)")
             st.dataframe(pd.DataFrame(res["normalized"], index=alts, columns=crits).style.format("{:.4f}"))
@@ -602,7 +731,7 @@ with st.container(border=True):
 # ---------------------------------------------------------------------------
 
 with st.container(border=True):
-    st.subheader("6. Comparer les huit combinaisons")
+    st.subheader("6. Comparer les combinaisons")
     st.caption("Le cours recommande d'appliquer plusieurs méthodes et de comparer les classements obtenus.")
     ranks, notes = {}, []
     for wm in WEIGHT_METHODS:
@@ -611,7 +740,14 @@ with st.container(border=True):
             notes.append(f"{wm} : {r_ if isinstance(r_, str) else 'jugements incohérents (CR ≥ 0,1)'}")
             continue
         for rm in RANK_METHODS:
-            ranks[f"{wm} + {rm}"] = rank(rm, w_)["ranks"]
+            if rm != "AHP" and X is None:
+                continue
+            rr = rank(rm, w_)
+            if rm == "AHP" and rr["inconsistent"] and not ss.get("force_ahp_alt", False):
+                continue
+            ranks[f"{wm} + {rm}"] = rr["ranks"]
+    if X is None:
+        notes.append("WSM, TOPSIS, entropie et CRITIC : matrice de décision incomplète")
     if notes:
         st.caption("Combinaisons non calculées — " + " ; ".join(notes))
     if ranks:

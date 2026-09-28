@@ -183,6 +183,31 @@ def ahp_weights(A):
     }
 
 
+def ahp_rank(alt_matrices, weights, names=None):
+    """Classement AHP des alternatives (diapos 31-32).
+
+    `alt_matrices[j]` : matrice de comparaison par paires des alternatives selon le critère j.
+    Priorités locales w_ij obtenues comme pour les critères (même test de cohérence), puis
+    priorités finales P_i = Σ_j w_j · w_ij ; la plus élevée est la meilleure.
+    """
+    w = _check_weights(weights, len(alt_matrices))
+    names = names or [f"C{j + 1}" for j in range(len(alt_matrices))]
+    locals_ = [ahp_weights(A) for A in alt_matrices]
+    P = np.column_stack([r["weights"] for r in locals_])
+    scores = P @ w
+    ranks, tied = rank_scores(scores, higher_is_better=True)
+    inconsistent = [names[j] for j, r in enumerate(locals_) if not r["consistent"]]
+    return {
+        "scores": scores,
+        "ranks": ranks,
+        "tied": tied,
+        "local": P,
+        "local_results": locals_,
+        "inconsistent": inconsistent,
+        "warnings": [],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Pondération subjective : BWM
 # ---------------------------------------------------------------------------

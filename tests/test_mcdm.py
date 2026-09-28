@@ -36,6 +36,15 @@ def test_ahp_voiture_priorites_finales():
     assert final[0] > final[1]  # la voiture 1 l'emporte (≈ 0,624 contre 0,376)
 
 
+def test_ahp_classement_voiture():
+    # Diapos 31-35 : priorités locales puis priorités finales.
+    w = mcdm.ahp_weights([[1, 7, 3], [1 / 7, 1, 1 / 3], [1 / 3, 3, 1]])["weights"]
+    r = mcdm.ahp_rank([[[1, 7], [1 / 7, 1]], [[1, 0.2], [5, 1]], [[1, 1 / 9], [9, 1]]], w)
+    np.testing.assert_allclose(r["local"][:, 1], [1 / 6, 5 / 6])
+    np.testing.assert_allclose(r["scores"], [0.6241, 0.3759], atol=1e-4)
+    assert list(r["ranks"]) == [1, 2] and not r["inconsistent"]
+
+
 def test_ahp_incoherent():
     r = mcdm.ahp_weights(mcdm.ahp_matrix_from_judgments(3, {(0, 1): 9, (1, 2): 9, (0, 2): 1 / 9}))
     assert r["CR"] > 0.1 and not r["consistent"]

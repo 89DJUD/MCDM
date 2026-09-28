@@ -5,10 +5,10 @@ Application d'aide à la décision multicritère (MCDM) construite sur les formu
 
 - **Pondération subjective** : AHP (méthode approximative, λmax, CI, RI, CR) et BWM (programme linéaire, ξ*).
 - **Pondération objective** : entropie et CRITIC, avec toutes les étapes intermédiaires.
-- **Classement** : WSM (somme pondérée) et TOPSIS.
+- **Classement** : WSM (somme pondérée), TOPSIS et AHP (priorités locales par comparaisons des alternatives, puis priorités finales).
 
-Chacune des 4 méthodes de pondération se combine avec chacune des 2 méthodes de classement,
-soit 8 combinaisons. Une section compare les 8 classements, avec la corrélation de Spearman.
+Chacune des 4 méthodes de pondération se combine avec chacune des 3 méthodes de classement,
+soit 12 combinaisons. Une section compare les classements, avec la corrélation de Spearman.
 
 ## « SWM » ou « WSM » ?
 
@@ -57,8 +57,9 @@ python -m pytest
 2. Modifiez les critères (sens Max ou Min) et les alternatives. Pour ajouter une ligne, utilisez le bas du tableau ;
    pour en supprimer une, sélectionnez-la puis appuyez sur Suppr.
 3. Remplissez la matrice de décision.
-4. Choisissez la méthode de pondération et saisissez les jugements (AHP, BWM) si nécessaire.
-5. Choisissez WSM ou TOPSIS : scores, classement complet, meilleure alternative, explication et export CSV
+4. Dans le panneau latéral, choisissez la méthode de pondération et la méthode de classement ;
+   saisissez les jugements (AHP, BWM) si nécessaire.
+5. Consultez le classement WSM, TOPSIS ou AHP : scores, classement complet, meilleure alternative, explication et export CSV
    (séparateur `;`, décimale `,`, lisible directement par Excel en français).
 
 ## Choix de calcul et cas particuliers
@@ -74,6 +75,9 @@ python -m pytest
   Un critère constant a une entropie de 1 et donc un poids nul.
 - **CRITIC** : normalisation min-max, écart type avec m − 1, corrélation de Pearson. Pour un critère constant, les
   corrélations sont fixées à 0 et le poids est nul. Avec moins de 3 alternatives, un avertissement s'affiche.
+- **Classement AHP** (diapos 31-32) : pour chaque critère, matrice de comparaison des alternatives (échelle 1 à 9),
+  priorités locales et CR par critère, puis priorité finale Σ w_j·w_ij. Avec une pondération AHP ou BWM, la matrice
+  de décision est facultative. Un bouton préremplit les comparaisons à partir des rapports de la matrice.
 - **WSM** : r = x/max (critère à maximiser), r = min/x (critère à minimiser). Si une colonne contient une valeur nulle ou
   négative, elle est normalisée par min-max et un avertissement s'affiche (pas de division par zéro).
 - **TOPSIS** : normalisation vectorielle, idéaux I⁺/I⁻, RC = S⁻/(S⁺ + S⁻). Une colonne nulle donne r = 0 ; si S⁺ + S⁻ = 0,
@@ -86,7 +90,7 @@ python -m pytest
 
 | Exercice | Résultat |
 |---|---|
-| AHP voiture (diapo 33) | w = (0,6687 ; 0,0882 ; 0,2431), λmax = 3,0108, CR = 0,0093 < 0,1. Priorités finales : voiture 1 ≈ 0,624, voiture 2 ≈ 0,376 |
+| AHP voiture (diapos 33-35) | w = (0,6687 ; 0,0882 ; 0,2431), λmax = 3,0108, CR = 0,0093 < 0,1. Priorités finales : voiture 1 = 0,6241, voiture 2 = 0,3759 |
 | CRITIC machines de découpe (diapo 53) | w = (0,1436 ; 0,1595 ; 0,2639 ; 0,4331) |
 | WSM machines (diapo 60) | Q = (0,7443 ; 0,8310 ; 0,8746 ; 0,9110) → **A4** meilleure |
 | TOPSIS voitures (diapo 67) | RC = (0,4545 ; 0,5678 ; 0,3703 ; 0,5527) → **M2** meilleure |
